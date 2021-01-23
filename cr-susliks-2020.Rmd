@@ -1,0 +1,199 @@
+---
+author: "Fernando Mateos-González"
+date: Last update "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    code_download: true
+    toc: yes
+    toc_float:
+      collapsed: no
+      smooth_scroll: no
+  md_document:
+    variant: markdown_github
+  pdf_document:
+    toc: yes
+title: "Capture-Recapture Analysis for Miroslav Susliks 2020"
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+# Introduction
+
+This report analyses data from 2 capture-recapture sessions in Miroslav
+during the 2020 spring in order to calculate the density of the
+population.
+
+Session 1 run from 23,27 of April to May 1st (6 occasions).
+
+Session 2 run from 18 - 22 of May (5 occasions).
+
+(Note: No problem with different n of occasions according to Murray
+<http://www.phidot.org/forum/viewtopic.php?f=36&t=3260>)
+
+```{r global-options, echo=FALSE, message=FALSE, warning=FALSE, include=FALSE, results="hide"}
+
+knitr::opts_chunk$set(fig.width=6, fig.asp = 0.618, fig.path='Figs/',
+                      echo=TRUE, warning=FALSE, message=FALSE)
+
+options(allow_html_in_all_outputs=TRUE)
+```
+
+# Libraries
+
+```{r results="hide"}
+library(secr)
+library(tidyverse)
+library(here)
+
+```
+
+# Tidying data
+
+Saved and edited two txt files from the original data directly in excel
+(sacrilege!): captures and traps.
+
+-   Eliminated several columns that we won't use in this analysis
+
+-   Selected only captures in the traps used for CR.
+
+-   Deleted one capture of a female without collar, a single capture in
+    between sessions, and two captures without collar code.
+
+-   Recoded the sessions, which were coded as every single day, into
+    sessions 1 and 2. (within each session we can consider the
+    population as closed, but deaths and births can happen between
+    sessions).
+
+-   Renamed the variable "Unique ID" as "occasion" and recoded it - now,
+    correctly - as each day as an occasion.
+
+-   Renamed the Collar ID variable as captureid. We'll use the collar
+    code this time, but we need an individual unique code for each
+    animal across seasons and hopefully across years if the collars stay
+    on the susliks after hibernation.
+
+-   Used the same trap layout from last year and added character 0 to
+    single digit traps ids on the capture file to match the trap file
+
+# Analysis
+
+We combine the information obtained from our captures and the trap
+locations to create the capthist file. The analysis was performed using
+the package 'secr' version 4.3.3 and R `r getRversion()`.
+
+```{r capthist}
+
+multi <- read.capthist(here("data", "captures.txt"), here("data", "traps.txt"), detector = "proximity") #The “proximity” detector type allows, at
+# most, one detection of each individual at a particular detector on any occasion (i.e.,
+# it is equivalent to what we call the Bernoulli or binomial encounter process model,
+# or model SCR0).
+
+summary(multi)
+
+
+```
+
+*n number of distinct individuals detected on each occasion t\
+*u number of individuals detected for the first time on each occasion t\
+*f number of individuals detected on exactly t occasions\
+*M(t+1) cumulative number of detected individuals on each occasion t
+
+## Trap array and consecutive captures of each individual
+
+```{r}
+par(mfrow = c(1,1), mar = c(1,1,1,1)) # reduce margins
+plot (multi, tracks = TRUE, gridsp = 5,border = 10)
+      
+
+```
+
+The most important insight from these figures is that individuals tend
+to be recaptured near their site of first capture. This is expected when
+the individuals of a species occupy home ranges. In SECR models the
+tendency for detections to be localised is reflected in the spatial
+scale parameter σ.
+
+## Successive trap-revealed movements and distances 
+
+```{r}
+m <- unlist(moves(multi))
+par(mar = c(3.2,4,1,1), mgp = c(2.1,0.6,0)) # reduce margins
+hist(m, breaks = seq(0/5, 50,5), xlab = "Movement m", main = "")
+```
+
+We will employ the estimate of the spatial scale σ from 2019
+(6.21) to fit the simplest possible SECR model with function secr.fit.
+
+```{r}
+fit <- secr.fit (multi, buffer = 4 * 6.21, trace = FALSE,biasLimit = NA, verify = FALSE)
+
+detector(traps(multi)) <- "proximity"
+
+fit
+```
+
+The report comprises:\
+• function call and time stamp\
+• summary of the data\
+• description of the model, including the maximized log likelihood,
+Akaike's Information Criterion AIC\
+• estimates of model coefficients (beta parameters)\
+• estimates of variance-covariance matrix of the coefficients\
+• estimates of the 'real' parameters
+
+. The estimated density is 158.58 susliks per hectare, 95% confidence
+interval 102-246 susliks per hectare\
+. The other two real parameters jointly determine the detection
+function, plotted below with 95% confidence limits
+
+```{r}
+par(mar = c(4,4,1,1)) # reduce margins
+plot(fit, limits = TRUE)
+
+
+```
+
+The theory of SECR tells us that buffer width is not critical as long as
+it is wide enough that animals at the edge have effectively zero chance
+of appearing in our sample.We check that for the present model with the
+function esa.plot.
+
+The estimated density has easily reached a plateau at the chosen buffer
+width (dashed red line):
+
+```{r}
+esa.plot(fit)
+abline(v = 4 * 6.21, lty = 2, col = 'red')
+
+```
+
+## Homeranges
+
+Mean distance in meters, between consecutive capture locations, pooled
+over individuals, per capture session (e.g. Efford 2004).
+
+```{r }
+dbar(multi, userdist = NULL, mask = NULL)
+
+```
+
+MMDM (for 'Mean Maximum Distance Moved') is the average maximum distance
+(in m) between detections of each individual i.e. the observed range
+length averaged over individuals (Otis et al. 1978).
+
+```{r}
+
+MMDM(multi, min.recapt = 1, full = FALSE, userdist = NULL, mask = NULL)
+
+```
+
+RPSV (for 'Root Pooled Spatial Variance') is a measure of the 2-D
+dispersion of the locations at which individual animals are detected,
+pooled over individuals (cf Calhoun and Casby 1958, Slade and Swihart
+1983).
+
+```{r}
+RPSV(multi, CC = FALSE)
+```
